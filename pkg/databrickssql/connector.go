@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/pingcap-inc/tidb2dw/pkg/tidbsql"
 	"github.com/pingcap-inc/tidb2dw/pkg/utils"
@@ -169,4 +170,16 @@ func (dc *DatabricksConnector) setColumns(sourceDatabase string, sourceTable str
 	}
 	dc.columns = tableColumns
 	return nil
+}
+
+func (dc *DatabricksConnector) InsertDDLItem(tableDef *cloudstorage.TableDefinition, preTableDef *cloudstorage.TableDefinition, timezone *time.Location) error {
+	return errors.New("Unimplement")
+}
+
+func (dc *DatabricksConnector) InsertDMLItem(record []string, tableDef *cloudstorage.TableDefinition, schemaTs string, timezone *time.Location) error {
+	return errors.New("Unimplement")
+}
+
+func (dc *DatabricksConnector) InsertUpdateDMLItem(record []string, preRecord []string, tableDef *cloudstorage.TableDefinition, schemaTs string, timezone *time.Location) error {
+	return errors.New("Unimplement")
 }

@@ -2,11 +2,14 @@ package snowsql
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/pingcap-inc/tidb2dw/pkg/utils"
+	"github.com/tikv/client-go/v2/oracle"
 
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/pingcap-inc/tidb2dw/pkg/tidbsql"
@@ -14,6 +17,47 @@ import (
 	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
 	"gitlab.com/tymonx/go-formatter/formatter"
 )
+
+const timeFormat string = "2006-01-02 15:04:05"
+
+func CreateHistoryTables(sfConfig *SnowflakeConfig, databaseName string, tableName string) error { // 代码放哪要再想一下，传 config 到这里总是很奇怪
+	db, err := sfConfig.OpenDB()
+	if err != nil {
+		return errors.Trace(err)
+	}
+
+	fmt.Println("success open db")
+
+	dml_sql := fmt.Sprintf(`CREATE TABLE %s_%s_dml_history (
+		 operator VARCHAR, commit_ts BIGINT, physical_time TIMESTAMP, schema_ts BIGINT, 
+		 pre_value VARIANT, post_value VARIANT);`, databaseName, tableName)
+
+	fmt.Printf("dml_sql is %s", dml_sql)
+	if err != nil {
+		return err
+	}
+	_, err = db.Exec(dml_sql)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println("success exec dml_sql")
+
+	ddl_sql := fmt.Sprintf(`CREATE TABLE %s_%s_ddl_history (ts BIGINT, 
+		 physical_time TIMESTAMP,
+		 ddl STRING,
+		 pre_schema VARIANT,
+		 post_schema VARIANT);`, databaseName, tableName) // ts 要改名成类似 commit-ts 么？
+
+	fmt.Printf("ddl_sql is %s", dml_sql)
+	if err != nil {
+		return err
+	}
+	_, err = db.Exec(ddl_sql)
+
+	fmt.Println("success exec ddl_sql")
+	return err
+}
 
 func CreateExternalStage(db *sql.DB, stageName, s3WorkspaceURL string, cred *credentials.Value) error {
 	sql, err := formatter.Format(`
@@ -174,4 +218,116 @@ func GenMergeInto(tableDef cloudstorage.TableDefinition, filePath string, stageN
 		strings.Join(valuesStat, ", "))
 
 	return mergeQuery
+}
+
+func GenInsertDDLItem(tableDef *cloudstorage.TableDefinition, preTableDef *cloudstorage.TableDefinition, timezone *time.Location) (string, error) {
+	physicalTime := oracle.GetTimeFromTS(tableDef.TableVersion).In(timezone).Format(timeFormat) // check
+
+	preSchema, err := json.Marshal(preTableDef)
+	if err != nil {
+		return "", errors.Trace(err)
+	}
+	postSchema, err := json.Marshal(tableDef)
+	if err != nil {
+		return "", errors.Trace(err)
+	}
+
+	insertQuery := fmt.Sprintf(
+		`INSERT INTO %s-%s-ddl-history VALUES(
+			%d,
+			%s,
+			%s,
+			%s,
+			%s
+		)`, tableDef.Schema, tableDef.Table, tableDef.TableVersion, physicalTime, tableDef.Query, preSchema, postSchema)
+	return insertQuery, nil
+}
+
+func GenInsertDMLItem(record []string, tableDef *cloudstorage.TableDefinition, schemaTs string, timezone *time.Location) (string, error) {
+	commitTs := record[3]
+	operator := record[0]
+
+	columnValue := make(map[string]string)
+	for i, column := range tableDef.Columns {
+		columnValue[column.Name] = record[i+5]
+	}
+	values, err := json.Marshal(columnValue)
+	if err != nil {
+		return "", errors.Trace(err)
+	}
+
+	ts, err := strconv.ParseUint(commitTs, 10, 64)
+	if err != nil {
+		return "", errors.Trace(err)
+	}
+	commitPhysicalTime := oracle.GetTimeFromTS(ts).In(timezone).Format(timeFormat) // check
+
+	if operator == "I" {
+		insertQuery := fmt.Sprintf(
+			`INSERT INTO %s-%s-dml-history VALUES(
+				%s,
+				%s,
+				%s,
+				%s,
+				%s,
+				%s
+			)`, tableDef.Schema, tableDef.Table, operator, commitTs, commitPhysicalTime, schemaTs, "{}", values)
+		return insertQuery, nil
+	} else if operator == "D" {
+		insertQuery := fmt.Sprintf(
+			`INSERT INTO %s-%s-dml-history VALUES(
+				%s,
+				%s,
+				%s,
+				%s,
+				%s,
+				%s
+			)`, tableDef.Schema, tableDef.Table, operator, commitTs, commitPhysicalTime, schemaTs, values, "{}")
+		return insertQuery, nil
+	}
+
+	return "", errors.New("Unknown operator")
+}
+
+func GenInsertUpdateDMLItem(record []string, preRecord []string, tableDef *cloudstorage.TableDefinition, schemaTs string, timezone *time.Location) (string, error) {
+	if !(record[0] == "I" && preRecord[0] == "D" && record[3] == preRecord[3]) {
+		return "", errors.New("Invalid update record")
+	}
+
+	commitTs := record[3]
+
+	postColumnValue := make(map[string]string)
+	for i, column := range tableDef.Columns {
+		postColumnValue[column.Name] = record[i+5]
+	}
+	postValues, err := json.Marshal(postColumnValue)
+	if err != nil {
+		return "", errors.Trace(err)
+	}
+
+	preColumnValue := make(map[string]string)
+	for i, column := range tableDef.Columns {
+		preColumnValue[column.Name] = preRecord[i+5]
+	}
+	preValues, err := json.Marshal(preColumnValue)
+	if err != nil {
+		return "", errors.Trace(err)
+	}
+
+	ts, err := strconv.ParseUint(commitTs, 10, 64)
+	if err != nil {
+		return "", errors.Trace(err)
+	}
+	commitPhysicalTime := oracle.GetTimeFromTS(ts).In(timezone).Format(timeFormat) // check
+
+	insertQuery := fmt.Sprintf(
+		`INSERT INTO %s-%s-dml-history VALUES(
+			%s,
+			%s,
+			%s,
+			%s,
+			%s,
+			%s
+		)`, tableDef.Schema, tableDef.Table, "U", commitTs, commitPhysicalTime, schemaTs, preValues, postValues)
+	return insertQuery, nil
 }

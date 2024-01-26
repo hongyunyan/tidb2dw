@@ -30,7 +30,7 @@ func NewCDCConnector(
 	cdcHost string, cdcPort int, tables []string, startTSO uint64, storageUri *url.URL,
 	flushInterval time.Duration, fileSize int, binaryEncodingMethod string,
 ) (*CDCConnector, error) {
-	sinkURIConfig := &SinkURIConfig{
+	sinkURIConfig := &SinkURIConfig{ // todo: change config
 		storageUri:    storageUri,
 		flushInterval: flushInterval,
 		fileSize:      fileSize,

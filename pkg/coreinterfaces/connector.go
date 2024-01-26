@@ -2,6 +2,7 @@ package coreinterfaces
 
 import (
 	"database/sql"
+	"time"
 
 	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
 )
@@ -24,4 +25,10 @@ type Connector interface {
 	LoadIncrement(tableDef cloudstorage.TableDefinition, filePath string) error
 	// Close closes the connection to the Data Warehouse
 	Close()
+	// generate ddl-history item and insert into dw
+	InsertDDLItem(tableDef *cloudstorage.TableDefinition, preTableDef *cloudstorage.TableDefinition, timezone *time.Location) error
+	// generate dml-history item for delete or insert event and insert into dw
+	InsertDMLItem(record []string, tableDef *cloudstorage.TableDefinition, schemaTs string, timezone *time.Location) error
+	// generate dml-history item for update event and insert into dw
+	InsertUpdateDMLItem(record []string, preRecord []string, tableDef *cloudstorage.TableDefinition, schemaTs string, timezone *time.Location) error
 }

@@ -9,12 +9,14 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/pingcap-inc/tidb2dw/history"
 	"github.com/pingcap-inc/tidb2dw/pkg/apiservice"
 	"github.com/pingcap-inc/tidb2dw/pkg/cdc"
 	"github.com/pingcap-inc/tidb2dw/pkg/coreinterfaces"
 	"github.com/pingcap-inc/tidb2dw/pkg/dumpling"
 	"github.com/pingcap-inc/tidb2dw/pkg/metrics"
 	"github.com/pingcap-inc/tidb2dw/pkg/tidbsql"
+	"github.com/pingcap-inc/tidb2dw/pkg/utils"
 	"github.com/pingcap-inc/tidb2dw/replicate"
 	"github.com/pingcap/errors"
 	"github.com/pingcap/log"
@@ -33,6 +35,7 @@ const (
 	RunModeSnapshotOnly
 	RunModeIncrementalOnly
 	RunModeCloud
+	RunModeHistory
 )
 
 var RunModeIds = map[RunMode][]string{
@@ -40,6 +43,7 @@ var RunModeIds = map[RunMode][]string{
 	RunModeSnapshotOnly:    {"snapshot-only"},
 	RunModeIncrementalOnly: {"incremental-only"},
 	RunModeCloud:           {"cloud"},
+	RunModeHistory:         {"history"},
 }
 
 // o => create changefeed =>   dump snapshot   => load snapshot => incremental load
@@ -287,6 +291,25 @@ func Replicate(
 	}
 
 	wg.Wait()
+	return nil
+}
+
+func Generate(
+	tables []string,
+	storageURI *url.URL,
+	connectorMap map[string]coreinterfaces.Connector,
+	timezone *time.Location,
+	startTS uint64,
+	endTS uint64,
+	csvOutputDialect string) error {
+	// 遍历 s3 上的地址
+	for _, tableFQN := range tables {
+		sourceDatabase, sourceTable := utils.SplitTableFQN(tableFQN)
+		err := history.GenerateHistoryEvents(sourceDatabase, sourceTable, storageURI, connectorMap[tableFQN], timezone, startTS, endTS, csvOutputDialect)
+		if err != nil {
+			return errors.Trace(err)
+		}
+	}
 	return nil
 }
 

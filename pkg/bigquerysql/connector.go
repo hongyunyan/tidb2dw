@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/pingcap-inc/tidb2dw/pkg/utils"
 
@@ -148,4 +149,16 @@ func (bc *BigQueryConnector) LoadIncrement(tableDef cloudstorage.TableDefinition
 
 func (bc *BigQueryConnector) Close() {
 	bc.bqClient.Close()
+}
+
+func (bc *BigQueryConnector) InsertDDLItem(tableDef *cloudstorage.TableDefinition, preTableDef *cloudstorage.TableDefinition, timezone *time.Location) error {
+	return errors.New("Unimplement")
+}
+
+func (bc *BigQueryConnector) InsertDMLItem(record []string, tableDef *cloudstorage.TableDefinition, schemaTs string, timezone *time.Location) error {
+	return errors.New("Unimplement")
+}
+
+func (bc *BigQueryConnector) InsertUpdateDMLItem(record []string, preRecord []string, tableDef *cloudstorage.TableDefinition, schemaTs string, timezone *time.Location) error {
+	return errors.New("Unimplement")
 }

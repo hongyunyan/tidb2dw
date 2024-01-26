@@ -315,7 +315,7 @@ require (
 	github.com/spkg/bom v1.0.0 // indirect
 	github.com/stretchr/objx v0.5.0 // indirect
 	github.com/tiancaiamao/gp v0.0.0-20221230034425-4025bc8a4d4a // indirect
-	github.com/tikv/client-go/v2 v2.0.8-0.20231227070846-61c486af13a5 // indirect
+	github.com/tikv/client-go/v2 v2.0.8-0.20231227070846-61c486af13a5
 	github.com/tikv/pd/client v0.0.0-20240103101103-a4d2f1ca365a // indirect
 	github.com/tklauser/go-sysconf v0.3.12 // indirect
 	github.com/tklauser/numcpus v0.6.1 // indirect

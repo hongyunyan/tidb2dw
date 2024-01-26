@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/pingcap/errors"
@@ -119,4 +120,16 @@ func (rc *RedshiftConnector) LoadIncrement(tableDef cloudstorage.TableDefinition
 
 func (rc *RedshiftConnector) Close() {
 	rc.db.Close()
+}
+
+func (rc *RedshiftConnector) InsertDDLItem(tableDef *cloudstorage.TableDefinition, preTableDef *cloudstorage.TableDefinition, timezone *time.Location) error {
+	return errors.New("Unimplement")
+}
+
+func (rc *RedshiftConnector) InsertDMLItem(record []string, tableDef *cloudstorage.TableDefinition, schemaTs string, timezone *time.Location) error {
+	return errors.New("Unimplement")
+}
+
+func (rc *RedshiftConnector) InsertUpdateDMLItem(record []string, preRecord []string, tableDef *cloudstorage.TableDefinition, schemaTs string, timezone *time.Location) error {
+	return errors.New("Unimplement")
 }

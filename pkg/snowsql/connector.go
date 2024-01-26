@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/pingcap/errors"
@@ -31,11 +32,15 @@ func NewSnowflakeConnector(sfConfig *SnowflakeConfig, stageName string, storageU
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
+
+	fmt.Println("success open db")
 	// create stage
 	stageUrl := fmt.Sprintf("%s://%s%s", storageURI.Scheme, storageURI.Host, storageURI.Path)
 	if err := CreateExternalStage(db, stageName, stageUrl, credentials); err != nil {
 		return nil, errors.Annotate(err, "Failed to create stage")
 	}
+
+	fmt.Println("success create stage")
 
 	return &SnowflakeConnector{
 		db:            db,
@@ -117,4 +122,46 @@ func (sc *SnowflakeConnector) Close() {
 		log.Error("fail to drop stage", zap.Error(err))
 	}
 	sc.db.Close()
+}
+
+func (sc *SnowflakeConnector) InsertDDLItem(tableDef *cloudstorage.TableDefinition, preTableDef *cloudstorage.TableDefinition, timezone *time.Location) error {
+	insertQuery, err := GenInsertDDLItem(tableDef, preTableDef, timezone)
+	if err != nil {
+		return errors.Trace(err)
+	}
+	_, err = sc.db.Exec(insertQuery)
+	if err != nil {
+		return errors.Trace(err)
+	}
+	log.Info("Successfully insert ddl item sql", zap.String("insertQuery", insertQuery))
+
+	return nil
+}
+
+func (sc *SnowflakeConnector) InsertDMLItem(record []string, tableDef *cloudstorage.TableDefinition, schemaTs string, timezone *time.Location) error {
+	insertQuery, err := GenInsertDMLItem(record, tableDef, schemaTs, timezone)
+	if err != nil {
+		return errors.Trace(err)
+	}
+	_, err = sc.db.Exec(insertQuery)
+	if err != nil {
+		return errors.Trace(err)
+	}
+	log.Info("Successfully insert dml item sql", zap.String("insertQuery", insertQuery))
+
+	return nil
+}
+
+func (sc *SnowflakeConnector) InsertUpdateDMLItem(record []string, preRecord []string, tableDef *cloudstorage.TableDefinition, schemaTs string, timezone *time.Location) error {
+	insertQuery, err := GenInsertUpdateDMLItem(record, preRecord, tableDef, schemaTs, timezone)
+	if err != nil {
+		return errors.Trace(err)
+	}
+	_, err = sc.db.Exec(insertQuery)
+	if err != nil {
+		return errors.Trace(err)
+	}
+	log.Info("Successfully insert update dml item sql", zap.String("insertQuery", insertQuery))
+
+	return nil
 }
