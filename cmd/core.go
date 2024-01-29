@@ -304,6 +304,7 @@ func Generate(
 	csvOutputDialect string) error {
 	// 遍历 s3 上的地址
 	for _, tableFQN := range tables {
+		log.Info("Start generate history events", zap.String("table", tableFQN), zap.String("storageURI", storageURI.Path))
 		sourceDatabase, sourceTable := utils.SplitTableFQN(tableFQN)
 		err := history.GenerateHistoryEvents(sourceDatabase, sourceTable, storageURI, connectorMap[tableFQN], timezone, startTS, endTS, csvOutputDialect)
 		if err != nil {

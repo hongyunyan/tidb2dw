@@ -44,16 +44,17 @@ func NewGenerateSession(
 
 	ctx := context.Background()
 	logger := log.L().With(zap.String("database", sourceDatabase), zap.String("table", sourceTable))
-	storageURI.Path = storageURI.Path + "/" + sourceDatabase + "/" + sourceTable
+	storageTableURI := *storageURI
+	storageTableURI.Path = storageURI.Path + "/" + sourceDatabase + "/" + sourceTable
 
-	externalStorage, err := putil.GetExternalStorageFromURI(ctx, storageURI.String())
+	externalStorage, err := putil.GetExternalStorageFromURI(ctx, storageTableURI.String())
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
 
 	return &HistoryGenerateSession{
 		ctx:             ctx,
-		storageURI:      storageURI,
+		storageURI:      &storageTableURI,
 		externalStorage: externalStorage,
 		sourceDatabase:  sourceDatabase,
 		sourceTable:     sourceTable,
@@ -182,16 +183,19 @@ func (session *HistoryGenerateSession) WriteDDLHistory(
 }
 
 func (session *HistoryGenerateSession) WriteDMLHistory(
-	dmlSchemaMap map[string]string) error {
+	dmlSchemaMap map[string]string,
+	preSchemaFileNames string) (bool, error) {
+
+	preSchemaHasDMLData := false
 
 	for dirName, schemaPath := range dmlSchemaMap {
 		var tableDef cloudstorage.TableDefinition
 		schemaContent, err := session.externalStorage.ReadFile(session.ctx, schemaPath)
 		if err != nil {
-			return errors.Trace(err)
+			return preSchemaHasDMLData, errors.Trace(err)
 		}
 		if err = json.Unmarshal(schemaContent, &tableDef); err != nil {
-			return errors.Trace(err)
+			return preSchemaHasDMLData, errors.Trace(err)
 		}
 
 		// get dml files
@@ -211,7 +215,7 @@ func (session *HistoryGenerateSession) WriteDMLHistory(
 
 				preRecord := []string{}
 				for _, record := range records {
-					if len(record) != tableDef.TotalColumns+5 {
+					if len(record) != tableDef.TotalColumns+6 { // 解释一下为什么是 6
 						return errors.New("DML record length not equal to total columns")
 					}
 					commitTs, err := strconv.ParseUint(record[3], 10, 64)
@@ -243,14 +247,18 @@ func (session *HistoryGenerateSession) WriteDMLHistory(
 					} else {
 						return errors.New("unvalid record " + strings.Join(record, ","))
 					}
+
+					if schemaPath == preSchemaFileNames {
+						preSchemaHasDMLData = true
+					}
 				}
 			}
 			return nil
 		}); err != nil {
-			return errors.Trace(err)
+			return preSchemaHasDMLData, errors.Trace(err)
 		}
 	}
-	return nil
+	return preSchemaHasDMLData, nil
 }
 
 func GenerateHistoryEvents(
@@ -285,32 +293,39 @@ func GenerateHistoryEvents(
 		return errors.Trace(err)
 	}
 
-	schemaFileNames, preFileNames, err := session.getSchemaFileNames() // preFileNames use to generate the pre-schema, if it's "", means the pre schema is empty
+	schemaFileNames, preSchemaFileNames, err := session.getSchemaFileNames() // preFileNames use to generate the pre-schema, if it's "", means the pre schema is empty
 	if err != nil {
 		return errors.Trace(err)
 	}
 
-	fmt.Println("schemaFileNames: ", schemaFileNames, "preFileNames: ", preFileNames)
+	fmt.Println("schemaFileNames: ", schemaFileNames, "preSchemaFileNames: ", preSchemaFileNames)
 
-	// 写 ddl
-	err = session.WriteDDLHistory(schemaFileNames, preFileNames)
-	if err != nil {
-		return errors.Trace(err)
-	}
-
-	// 写 dml
-	if preFileNames != "" {
-		schemaFileNames = append(schemaFileNames, preFileNames)
-	}
 	dmlSchemaMap := make(map[string]string)
 	for _, schemaNames := range schemaFileNames {
 		splits := strings.Split(schemaNames, "_")
 		dmlSchemaMap[splits[1]] = "meta/" + schemaNames
 	}
 
+	if preSchemaFileNames != "" {
+		splits := strings.Split(preSchemaFileNames, "_")
+		dmlSchemaMap[splits[1]] = "meta/" + preSchemaFileNames
+	}
+
 	fmt.Println("dmlSchemaMap: ", dmlSchemaMap)
 
-	err = session.WriteDMLHistory(dmlSchemaMap)
+	preSchemaHasDMLData, err := session.WriteDMLHistory(dmlSchemaMap, "meta/"+preSchemaFileNames)
+	if err != nil {
+		return errors.Trace(err)
+	}
+
+	// 也就是 dml 出现的 schemaTs 的对应 schema 都要写
+	if preSchemaHasDMLData { // we need to add preSchema for the begin DMLs, except when then startTs = the first schema TS
+		// 写 ddl
+		schemaFileNames = append(schemaFileNames, preSchemaFileNames)
+		preSchemaFileNames = ""
+
+	}
+	err = session.WriteDDLHistory(schemaFileNames, preSchemaFileNames)
 	if err != nil {
 		return errors.Trace(err)
 	}

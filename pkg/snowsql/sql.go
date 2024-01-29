@@ -30,9 +30,9 @@ func CreateHistoryTables(sfConfig *SnowflakeConfig, databaseName string, tableNa
 
 	fmt.Println("success open db")
 
-	dml_sql := fmt.Sprintf(`CREATE TABLE %s_%s_dml_history (
-		 operator VARCHAR, commit_ts BIGINT, physical_time TIMESTAMP, schema_ts BIGINT, 
-		 pre_value VARIANT, post_value VARIANT);`, databaseName, tableName)
+	dml_sql := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s_%s_dml_history (
+		 operator VARCHAR, commit_ts BIGINT, physical_time TIMESTAMP, schema_ts BIGINT, handle_key STRING,
+		 pre_value VARIANT, post_value VARIANT);`, databaseName, tableName) // 估计要 if exists
 
 	fmt.Printf("dml_sql is %s", dml_sql)
 	if err != nil {
@@ -45,7 +45,7 @@ func CreateHistoryTables(sfConfig *SnowflakeConfig, databaseName string, tableNa
 
 	fmt.Println("success exec dml_sql")
 
-	ddl_sql := fmt.Sprintf(`CREATE TABLE %s_%s_ddl_history (ts BIGINT, 
+	ddl_sql := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s_%s_ddl_history (ts BIGINT, 
 		 physical_time TIMESTAMP,
 		 ddl STRING,
 		 pre_schema VARIANT,
@@ -249,7 +249,7 @@ func GenInsertDMLItem(record []string, tableDef *cloudstorage.TableDefinition, s
 
 	columnValue := make(map[string]string)
 	for i, column := range tableDef.Columns {
-		columnValue[column.Name] = record[i+5]
+		columnValue[column.Name] = record[i+6]
 	}
 	values, err := json.Marshal(columnValue)
 	if err != nil {
@@ -264,13 +264,13 @@ func GenInsertDMLItem(record []string, tableDef *cloudstorage.TableDefinition, s
 
 	if operator == "I" {
 		insertQuery := fmt.Sprintf(
-			`INSERT INTO %s_%s_dml_history (OPERATOR, COMMIT_TS, PHYSICAL_TIME, SCHEMA_TS, PRE_VALUE, POST_VALUE) select '%s','%s','%s','%s',TO_VARIANT(PARSE_JSON('%s')),TO_VARIANT(PARSE_JSON('%s'))`,
-			tableDef.Schema, tableDef.Table, operator, commitTs, commitPhysicalTime, schemaTs, "{}", values)
+			`INSERT INTO %s_%s_dml_history (OPERATOR, COMMIT_TS, PHYSICAL_TIME, SCHEMA_TS, HANDLE_KEY, PRE_VALUE, POST_VALUE) select '%s','%s','%s','%s','%s', TO_VARIANT(PARSE_JSON('%s')),TO_VARIANT(PARSE_JSON('%s'))`,
+			tableDef.Schema, tableDef.Table, operator, commitTs, commitPhysicalTime, schemaTs, record[5], "{}", values)
 		return insertQuery, nil
 	} else if operator == "D" {
 		insertQuery := fmt.Sprintf(
-			`INSERT INTO %s_%s_dml_history (OPERATOR, COMMIT_TS, PHYSICAL_TIME, SCHEMA_TS, PRE_VALUE, POST_VALUE) select '%s','%s','%s','%s',TO_VARIANT(PARSE_JSON('%s')),TO_VARIANT(PARSE_JSON('%s'))`,
-			tableDef.Schema, tableDef.Table, operator, commitTs, commitPhysicalTime, schemaTs, values, "{}")
+			`INSERT INTO %s_%s_dml_history (OPERATOR, COMMIT_TS, PHYSICAL_TIME, SCHEMA_TS, HANDLE_KEY, PRE_VALUE, POST_VALUE) select '%s','%s','%s','%s','%s',TO_VARIANT(PARSE_JSON('%s')),TO_VARIANT(PARSE_JSON('%s'))`,
+			tableDef.Schema, tableDef.Table, operator, commitTs, commitPhysicalTime, schemaTs, record[5], values, "{}")
 		return insertQuery, nil
 	}
 
@@ -286,7 +286,7 @@ func GenInsertUpdateDMLItem(record []string, preRecord []string, tableDef *cloud
 
 	postColumnValue := make(map[string]string)
 	for i, column := range tableDef.Columns {
-		postColumnValue[column.Name] = record[i+5]
+		postColumnValue[column.Name] = record[i+6]
 	}
 	postValues, err := json.Marshal(postColumnValue)
 	if err != nil {
@@ -295,7 +295,7 @@ func GenInsertUpdateDMLItem(record []string, preRecord []string, tableDef *cloud
 
 	preColumnValue := make(map[string]string)
 	for i, column := range tableDef.Columns {
-		preColumnValue[column.Name] = preRecord[i+5]
+		preColumnValue[column.Name] = preRecord[i+6] // 这个用个 const 给我统一掉...
 	}
 	preValues, err := json.Marshal(preColumnValue)
 	if err != nil {
@@ -309,7 +309,7 @@ func GenInsertUpdateDMLItem(record []string, preRecord []string, tableDef *cloud
 	commitPhysicalTime := oracle.GetTimeFromTS(ts).In(timezone).Format(timeFormat) // check
 
 	insertQuery := fmt.Sprintf(
-		`INSERT INTO %s_%s_dml_history (OPERATOR, COMMIT_TS, PHYSICAL_TIME, SCHEMA_TS, PRE_VALUE, POST_VALUE) select '%s','%s','%s','%s',TO_VARIANT(PARSE_JSON('%s')),TO_VARIANT(PARSE_JSON('%s'))`,
-		tableDef.Schema, tableDef.Table, "U", commitTs, commitPhysicalTime, schemaTs, preValues, postValues)
+		`INSERT INTO %s_%s_dml_history (OPERATOR, COMMIT_TS, PHYSICAL_TIME, SCHEMA_TS, HANDLE_KEY, PRE_VALUE, POST_VALUE) select '%s','%s','%s','%s','%s',TO_VARIANT(PARSE_JSON('%s')),TO_VARIANT(PARSE_JSON('%s'))`,
+		tableDef.Schema, tableDef.Table, "U", commitTs, commitPhysicalTime, schemaTs, record[5], preValues, postValues)
 	return insertQuery, nil
 }

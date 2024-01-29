@@ -231,9 +231,6 @@ func NewSnowflakeCmd() *cobra.Command {
 				snapConnectorMap, increConnectorMap, "snowflake", mode,
 			)
 		}
-
-		// 把 start-time 和 end-time 转换为时间戳传下去
-		// 加一个校验字段的，如果是 history mode 就必须要有 start-time，end-time，并且能访问 storage（先只支持 s3）
 	}
 
 	cmd := &cobra.Command{
