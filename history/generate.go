@@ -108,10 +108,10 @@ func (session *HistoryGenerateSession) getSchemaFileNames() ([]string, string, e
 	maxTSLessThanStartTS := uint64(0) // record the max Ts which is <= startTS, which should be add to the dir
 	prePathName := ""                 // record the schema file name for maxTSLessThanStartTS
 	if err := session.externalStorage.WalkDir(session.ctx, &storage.WalkOption{SubDir: "meta", ObjPrefix: "schema_"}, func(path string, size int64) error {
-		session.logger.Info("in getSchemaFileNames: WalkDir in storageURI.Path {}, current path is {}", zap.String("storageURI.Path", session.storageURI.Path), zap.String("path", path))
+		session.logger.Info("in getSchemaFileNames: WalkDir", zap.String("storageURI.Path", session.storageURI.Path), zap.String("path", path))
 		if strings.HasSuffix(path, ".json") {
-			// path 估计要再处理过
-			splits := strings.Split(path, "_")
+			slashSplits := strings.Split(path, "/")
+			splits := strings.Split(slashSplits[1], "_")
 			if len(splits) != 3 {
 				return errors.New("schema file name format error")
 			}
@@ -121,10 +121,10 @@ func (session *HistoryGenerateSession) getSchemaFileNames() ([]string, string, e
 			}
 
 			if ts >= session.startTS && ts <= session.endTS {
-				schemaFileNames = append(schemaFileNames, path)
+				schemaFileNames = append(schemaFileNames, slashSplits[1])
 			} else if ts < session.startTS && ts > maxTSLessThanStartTS {
 				maxTSLessThanStartTS = ts
-				prePathName = path
+				prePathName = slashSplits[1]
 			}
 
 			if ts == session.startTS {
@@ -147,9 +147,10 @@ func (session *HistoryGenerateSession) WriteDDLHistory(
 	preSchemaFileName string) error {
 
 	var preTableDef cloudstorage.TableDefinition
+	subDir := "meta/"
 
 	if preSchemaFileName != "" {
-		preSchemaContent, err := session.externalStorage.ReadFile(session.ctx, preSchemaFileName)
+		preSchemaContent, err := session.externalStorage.ReadFile(session.ctx, subDir+preSchemaFileName)
 		if err != nil {
 			return errors.Trace(err)
 		}
@@ -160,9 +161,9 @@ func (session *HistoryGenerateSession) WriteDDLHistory(
 
 	// 先考虑直接把 tableDef 当作 pre-schema 来用
 
-	for _, path := range schemaFileNames {
+	for _, schemaFileName := range schemaFileNames {
 		var tableDef cloudstorage.TableDefinition
-		schemaContent, err := session.externalStorage.ReadFile(session.ctx, path)
+		schemaContent, err := session.externalStorage.ReadFile(session.ctx, subDir+schemaFileName)
 		if err != nil {
 			return errors.Trace(err)
 		}
@@ -181,32 +182,15 @@ func (session *HistoryGenerateSession) WriteDDLHistory(
 }
 
 func (session *HistoryGenerateSession) WriteDMLHistory(
-	dirLists []string,
-	schemaFileNames []string) error {
+	dmlSchemaMap map[string]string) error {
 
-	dmlSchemaMap := make(map[string]string)
-	for _, dirName := range dirLists {
-		for _, schemaNames := range schemaFileNames {
-			if strings.Contains(schemaNames, dirName) { // 这个映射逻辑要重新写一下，最后看看有没有更简单的方法获取
-				dmlSchemaMap[dirName] = schemaNames
-				break
-			}
-		}
-	}
-
-	for _, dirName := range dirLists {
-		// get schema def
-		schemaPath := dmlSchemaMap[dirName]
-
+	for dirName, schemaPath := range dmlSchemaMap {
 		var tableDef cloudstorage.TableDefinition
 		schemaContent, err := session.externalStorage.ReadFile(session.ctx, schemaPath)
 		if err != nil {
 			return errors.Trace(err)
 		}
 		if err = json.Unmarshal(schemaContent, &tableDef); err != nil {
-			return errors.Trace(err)
-		}
-		if err != nil {
 			return errors.Trace(err)
 		}
 
@@ -248,9 +232,9 @@ func (session *HistoryGenerateSession) WriteDMLHistory(
 						if err != nil {
 							return errors.Trace(err)
 						}
-					} else if operator == "I" {
+					} else if operator == "D" {
 						preRecord = record
-					} else if operator == "U" {
+					} else if operator == "I" {
 						err = session.connector.InsertUpdateDMLItem(record, preRecord, &tableDef, dirName, session.timezone)
 						if err != nil {
 							return errors.Trace(err)
@@ -301,19 +285,12 @@ func GenerateHistoryEvents(
 		return errors.Trace(err)
 	}
 
-	// 先根据 timestamp 获取需要用到的 dml 的 文件夹名 以及对应的 schema 文件，[begin, end]
-	// begin 是<= start-timestamp 中最大的 timestamp
-	// end 是 <= end-timestamp 中最大的 timestamp
-	dirLists, err := session.getDMLDirNames()
-	if err != nil {
-		return errors.Trace(err)
-	}
 	schemaFileNames, preFileNames, err := session.getSchemaFileNames() // preFileNames use to generate the pre-schema, if it's "", means the pre schema is empty
 	if err != nil {
 		return errors.Trace(err)
 	}
 
-	fmt.Println("dirLists: ", dirLists, "schemaFileNames: ", schemaFileNames)
+	fmt.Println("schemaFileNames: ", schemaFileNames, "preFileNames: ", preFileNames)
 
 	// 写 ddl
 	err = session.WriteDDLHistory(schemaFileNames, preFileNames)
@@ -325,7 +302,15 @@ func GenerateHistoryEvents(
 	if preFileNames != "" {
 		schemaFileNames = append(schemaFileNames, preFileNames)
 	}
-	err = session.WriteDMLHistory(dirLists, schemaFileNames)
+	dmlSchemaMap := make(map[string]string)
+	for _, schemaNames := range schemaFileNames {
+		splits := strings.Split(schemaNames, "_")
+		dmlSchemaMap[splits[1]] = "meta/" + schemaNames
+	}
+
+	fmt.Println("dmlSchemaMap: ", dmlSchemaMap)
+
+	err = session.WriteDMLHistory(dmlSchemaMap)
 	if err != nil {
 		return errors.Trace(err)
 	}

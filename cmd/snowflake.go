@@ -62,13 +62,13 @@ func transformTimeZone(timezone string) (*time.Location, error) {
 	return loc, nil
 }
 
-func convertToTimestamp(startTime, endTime string, tc *time.Location) (uint64, uint64) {
+func convertToTS(startTime, endTime string, tc *time.Location) (uint64, uint64) {
 	startTimestamp, _ := time.ParseInLocation(layout, startTime, tc)
 	endTimestamp, _ := time.ParseInLocation(layout, endTime, tc)
 
 	fmt.Println("startTimestamp: ", startTimestamp, "endTimestamp: ", endTimestamp)
 
-	return oracle.ComposeTS(startTimestamp.Unix(), 0), oracle.ComposeTS(endTimestamp.Unix(), 0) // 可能精度有问题
+	return oracle.ComposeTS(startTimestamp.UnixMilli(), 0), oracle.ComposeTS(endTimestamp.UnixMilli(), 0) // 可能精度有问题
 }
 
 func NewSnowflakeCmd() *cobra.Command {
@@ -121,7 +121,8 @@ func NewSnowflakeCmd() *cobra.Command {
 				return errors.Trace(err)
 			}
 
-			startTimestamp, endTimestamp := convertToTimestamp(startTime, endTime, tc)
+			startTS, endTS := convertToTS(startTime, endTime, tc)
+			fmt.Printf("startTS: %d, endTS: %d", startTS, endTS)
 
 			// check storageURI/ak/sk is valid
 
@@ -166,7 +167,7 @@ func NewSnowflakeCmd() *cobra.Command {
 				}
 			}()
 
-			return Generate(tables, storageURI, connectorMap, tc, startTimestamp, endTimestamp, "snowflake")
+			return Generate(tables, storageURI, connectorMap, tc, startTS, endTS, "snowflake")
 		} else {
 			if awsAccessKey != "" && awsSecretKey != "" {
 				credValue = &credentials.Value{

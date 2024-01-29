@@ -10,10 +10,12 @@ import (
 
 	"github.com/pingcap-inc/tidb2dw/pkg/utils"
 	"github.com/tikv/client-go/v2/oracle"
+	"go.uber.org/zap"
 
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/pingcap-inc/tidb2dw/pkg/tidbsql"
 	"github.com/pingcap/errors"
+	"github.com/pingcap/log"
 	"github.com/pingcap/tiflow/pkg/sink/cloudstorage"
 	"gitlab.com/tymonx/go-formatter/formatter"
 )
@@ -227,19 +229,17 @@ func GenInsertDDLItem(tableDef *cloudstorage.TableDefinition, preTableDef *cloud
 	if err != nil {
 		return "", errors.Trace(err)
 	}
+	log.Info("InsertDDLItem", zap.Any("preTableDef", preTableDef), zap.Any("preSchema", preSchema))
+
 	postSchema, err := json.Marshal(tableDef)
 	if err != nil {
 		return "", errors.Trace(err)
 	}
+	log.Info("InsertDDLItem", zap.Any("tableDef", tableDef), zap.Any("postSchema", postSchema))
 
 	insertQuery := fmt.Sprintf(
-		`INSERT INTO %s-%s-ddl-history VALUES(
-			%d,
-			%s,
-			%s,
-			%s,
-			%s
-		)`, tableDef.Schema, tableDef.Table, tableDef.TableVersion, physicalTime, tableDef.Query, preSchema, postSchema)
+		`INSERT INTO %s_%s_ddl_history (TS, PHYSICAL_TIME, DDL, PRE_SCHEMA, POST_SCHEMA) select %d, '%s', '%s', TO_VARIANT(PARSE_JSON('%s')), TO_VARIANT(PARSE_JSON('%s'))`,
+		tableDef.Schema, tableDef.Table, tableDef.TableVersion, physicalTime, tableDef.Query, preSchema, postSchema)
 	return insertQuery, nil
 }
 
@@ -264,25 +264,13 @@ func GenInsertDMLItem(record []string, tableDef *cloudstorage.TableDefinition, s
 
 	if operator == "I" {
 		insertQuery := fmt.Sprintf(
-			`INSERT INTO %s-%s-dml-history VALUES(
-				%s,
-				%s,
-				%s,
-				%s,
-				%s,
-				%s
-			)`, tableDef.Schema, tableDef.Table, operator, commitTs, commitPhysicalTime, schemaTs, "{}", values)
+			`INSERT INTO %s_%s_dml_history (OPERATOR, COMMIT_TS, PHYSICAL_TIME, SCHEMA_TS, PRE_VALUE, POST_VALUE) select '%s','%s','%s','%s',TO_VARIANT(PARSE_JSON('%s')),TO_VARIANT(PARSE_JSON('%s'))`,
+			tableDef.Schema, tableDef.Table, operator, commitTs, commitPhysicalTime, schemaTs, "{}", values)
 		return insertQuery, nil
 	} else if operator == "D" {
 		insertQuery := fmt.Sprintf(
-			`INSERT INTO %s-%s-dml-history VALUES(
-				%s,
-				%s,
-				%s,
-				%s,
-				%s,
-				%s
-			)`, tableDef.Schema, tableDef.Table, operator, commitTs, commitPhysicalTime, schemaTs, values, "{}")
+			`INSERT INTO %s_%s_dml_history (OPERATOR, COMMIT_TS, PHYSICAL_TIME, SCHEMA_TS, PRE_VALUE, POST_VALUE) select '%s','%s','%s','%s',TO_VARIANT(PARSE_JSON('%s')),TO_VARIANT(PARSE_JSON('%s'))`,
+			tableDef.Schema, tableDef.Table, operator, commitTs, commitPhysicalTime, schemaTs, values, "{}")
 		return insertQuery, nil
 	}
 
@@ -321,13 +309,7 @@ func GenInsertUpdateDMLItem(record []string, preRecord []string, tableDef *cloud
 	commitPhysicalTime := oracle.GetTimeFromTS(ts).In(timezone).Format(timeFormat) // check
 
 	insertQuery := fmt.Sprintf(
-		`INSERT INTO %s-%s-dml-history VALUES(
-			%s,
-			%s,
-			%s,
-			%s,
-			%s,
-			%s
-		)`, tableDef.Schema, tableDef.Table, "U", commitTs, commitPhysicalTime, schemaTs, preValues, postValues)
+		`INSERT INTO %s_%s_dml_history (OPERATOR, COMMIT_TS, PHYSICAL_TIME, SCHEMA_TS, PRE_VALUE, POST_VALUE) select '%s','%s','%s','%s',TO_VARIANT(PARSE_JSON('%s')),TO_VARIANT(PARSE_JSON('%s'))`,
+		tableDef.Schema, tableDef.Table, "U", commitTs, commitPhysicalTime, schemaTs, preValues, postValues)
 	return insertQuery, nil
 }

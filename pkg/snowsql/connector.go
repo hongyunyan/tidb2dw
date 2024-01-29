@@ -126,6 +126,7 @@ func (sc *SnowflakeConnector) Close() {
 
 func (sc *SnowflakeConnector) InsertDDLItem(tableDef *cloudstorage.TableDefinition, preTableDef *cloudstorage.TableDefinition, timezone *time.Location) error {
 	insertQuery, err := GenInsertDDLItem(tableDef, preTableDef, timezone)
+	log.Info("InsertDDLItem", zap.String("insertQuery", insertQuery))
 	if err != nil {
 		return errors.Trace(err)
 	}
