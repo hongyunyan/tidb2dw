@@ -21,6 +21,7 @@ import (
 )
 
 const timeFormat string = "2006-01-02 15:04:05"
+const preColumnNumber int = 7
 
 func CreateHistoryTables(sfConfig *SnowflakeConfig, databaseName string, tableName string) error { // 代码放哪要再想一下，传 config 到这里总是很奇怪
 	db, err := sfConfig.OpenDB()
@@ -163,9 +164,9 @@ func GenMergeInto(tableDef cloudstorage.TableDefinition, filePath string, stageN
 	selectStat = append(selectStat, `$1 AS "METADATA$FLAG"`)
 	for i, col := range tableDef.Columns {
 		if TiDB2SnowflakeTypeMap[strings.ToLower(col.Tp)] == "BINARY" {
-			selectStat = append(selectStat, fmt.Sprintf(`TO_BINARY($%d, 'HEX') AS %s`, i+5, col.Name))
+			selectStat = append(selectStat, fmt.Sprintf(`TO_BINARY($%d, 'HEX') AS %s`, i+preColumnNumber, col.Name))
 		} else {
-			selectStat = append(selectStat, fmt.Sprintf(`$%d AS %s`, i+5, col.Name))
+			selectStat = append(selectStat, fmt.Sprintf(`$%d AS %s`, i+preColumnNumber, col.Name))
 		}
 	}
 
@@ -200,7 +201,7 @@ func GenMergeInto(tableDef cloudstorage.TableDefinition, filePath string, stageN
 			SELECT
 				%s
 			FROM '@%s/%s'
-			QUALIFY row_number() over (partition by %s order by $4 desc) = 1
+			QUALIFY row_number() over (partition by %s order by ($4,$1) desc) = 1
 		) AS S
 		ON
 		(

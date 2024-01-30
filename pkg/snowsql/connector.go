@@ -112,6 +112,7 @@ func (sc *SnowflakeConnector) LoadIncrement(tableDef cloudstorage.TableDefinitio
 	if err != nil {
 		return errors.Trace(err)
 	}
+	log.Info("LoadIncrement", zap.String("mergeQuery", mergeQuery))
 	log.Info("Successfully merge file", zap.String("file", filePath))
 	return nil
 }

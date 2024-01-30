@@ -12,7 +12,7 @@ require (
 	github.com/pingcap/log v1.1.1-0.20230317032135-a0d097d16e22
 	github.com/pingcap/tidb v1.1.0-beta.0.20240105042433-54d8a1416ab0
 	github.com/pingcap/tidb/pkg/parser v0.0.0-20231229060758-e19e06e1bc19
-	github.com/pingcap/tiflow v0.0.0-20240116023615-d5a2a007dc6f
+	github.com/pingcap/tiflow v0.0.0-20240130074523-55f0bb7356c5
 	github.com/snowflakedb/gosnowflake v1.6.18
 	github.com/spf13/cobra v1.7.0
 	github.com/stretchr/testify v1.8.4
@@ -316,7 +316,7 @@ require (
 	github.com/stretchr/objx v0.5.0 // indirect
 	github.com/tiancaiamao/gp v0.0.0-20221230034425-4025bc8a4d4a // indirect
 	github.com/tikv/client-go/v2 v2.0.8-0.20231227070846-61c486af13a5
-	github.com/tikv/pd/client v0.0.0-20240103101103-a4d2f1ca365a // indirect
+	github.com/tikv/pd/client v0.0.0-20240108040922-c94810e110ce // indirect
 	github.com/tklauser/go-sysconf v0.3.12 // indirect
 	github.com/tklauser/numcpus v0.6.1 // indirect
 	github.com/twmb/murmur3 v1.1.6 // indirect

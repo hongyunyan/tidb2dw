@@ -51,9 +51,12 @@ func NewCDCConnector(
 }
 
 func (c *CDCConnector) CreateChangefeed() error {
+	log.Info("Begin CreateChangefeed")
 	client := &http.Client{}
 	replicateCfg := apiv2.GetDefaultReplicaConfig()
 	replicateCfg.Sink.CSVConfig.IncludeCommitTs = true
+	replicateCfg.Sink.CSVConfig.OutputOldValue = true
+	replicateCfg.Sink.CSVConfig.OutputHandleKey = true
 	replicateCfg.Sink.CSVConfig.BinaryEncodingMethod = c.binaryEncodingMethod
 	replicateCfg.Sink.CloudStorageConfig = &apiv2.CloudStorageConfig{
 		FlushInterval:  putil.AddressOf(c.sinkURIConfig.flushInterval.String()),

@@ -120,6 +120,7 @@ func (sess *IncrementReplicateSession) parseSchemaFilePath(path string) error {
 	if err = json.Unmarshal(schemaContent, &tableDef); err != nil {
 		return errors.Trace(err)
 	}
+	log.Info(" hyy parseSchemaFilePath", zap.Any("tableDef", tableDef))
 	checksumInMem, err := tableDef.Sum32(nil)
 	if err != nil {
 		return errors.Trace(err)
@@ -200,6 +201,11 @@ func (sess *IncrementReplicateSession) getNewFiles() (map[cloudstorage.DmlPathKe
 	opt := &storage.WalkOption{SubDir: fmt.Sprintf("%s/%s", sess.sourceDatabase, sess.sourceTable)}
 	err := sess.externalStorage.WalkDir(sess.ctx, opt, func(path string, size int64) error {
 		if cloudstorage.IsSchemaFile(path) {
+			if sess.SchemaCheckpointExists(path) {
+				log.Info("hyy", zap.Any("pass schema file", path))
+				// skip old schema file
+				return nil
+			}
 			if err := sess.parseSchemaFilePath(path); err != nil {
 				sess.logger.Error("failed to parse schema file path", zap.Error(err))
 				// skip handling this file
@@ -235,6 +241,15 @@ func (sess *IncrementReplicateSession) getTableDef(tableVersion uint64) cloudsto
 		sess.logger.Panic("tableDef not found", zap.Any("table version", tableVersion), zap.Any("tableDefMap", sess.tableDefMap))
 		return cloudstorage.TableDefinition{}
 	}
+}
+
+func (sess *IncrementReplicateSession) SchemaCheckpointExists(filePath string) bool {
+	checkpointFileName := strings.TrimSuffix(filePath, ".json") + ".checkpoint"
+	exist, err := sess.externalStorage.FileExists(sess.ctx, checkpointFileName)
+	if err != nil {
+		return false
+	}
+	return exist
 }
 
 func (sess *IncrementReplicateSession) CheckpointExists(filePath string) bool {
@@ -281,7 +296,7 @@ func (sess *IncrementReplicateSession) syncExecDMLEvents(
 }
 
 func (sess *IncrementReplicateSession) syncExecDDLEvents(tableDef cloudstorage.TableDefinition) error {
-	if len(tableDef.Query) == 0 {
+	if tableDef.Version == 0 || len(tableDef.Query) == 0 {
 		// schema.json file without query is used to initialize the schema.
 		err := sess.dwConnector.InitSchema(tableDef.Columns)
 		return errors.Wrap(err, "failed to init schema")
@@ -308,14 +323,21 @@ func (sess *IncrementReplicateSession) syncExecDDLEvents(tableDef cloudstorage.T
 			if err != nil {
 				return errors.Trace(err)
 			}
-			if err = sess.externalStorage.DeleteFile(sess.ctx, filePath); err != nil {
+			schemaCheckpointFileName := strings.TrimSuffix(filePath, ".json") + ".checkpoint"
+			log.Info("hyy", zap.String("schemaCheckpointFileName", schemaCheckpointFileName))
+
+			// upload a checkpoint file to indicate that the file has been loaded into data warehouse
+			if err := sess.externalStorage.WriteFile(sess.ctx, schemaCheckpointFileName, []byte{}); err != nil {
 				return errors.Trace(err)
 			}
+			// if err = sess.externalStorage.DeleteFile(sess.ctx, filePath); err != nil {
+			// 	return errors.Trace(err)
+			// }
 			delete(sess.tableDefMap, item.TableVersion)
 		}
 	}
-	// clear the query in the current table definition file.
-	tableDef.Query = ""
+	// set version = 0 as a mark
+	tableDef.Version = 0
 	data, err := tableDef.MarshalWithQuery()
 	if err != nil {
 		return errors.Trace(err)
