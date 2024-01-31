@@ -31,7 +31,7 @@ func CreateHistoryTables(sfConfig *SnowflakeConfig, databaseName string, tableNa
 
 	fmt.Println("success open db")
 
-	dml_sql := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s_%s_dml_history (
+	dml_sql := fmt.Sprintf(`CREATE OR REPLACE TABLE %s_%s_dml_history (
 		 operator VARCHAR, commit_ts BIGINT, physical_time TIMESTAMP, schema_ts BIGINT, handle_key STRING,
 		 pre_value VARIANT, post_value VARIANT);`, databaseName, tableName) // 估计要 if exists
 
@@ -46,7 +46,7 @@ func CreateHistoryTables(sfConfig *SnowflakeConfig, databaseName string, tableNa
 
 	fmt.Println("success exec dml_sql")
 
-	ddl_sql := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s_%s_ddl_history (ts BIGINT, 
+	ddl_sql := fmt.Sprintf(`CREATE OR REPLACE TABLE %s_%s_ddl_history (ts BIGINT, 
 		 physical_time TIMESTAMP,
 		 ddl STRING,
 		 pre_schema VARIANT,
